@@ -9,6 +9,29 @@ struct HtmxExtension {
 }
 
 impl HtmxExtension {
+    fn find_existing_binary(&self) -> Option<String> {
+        let (platform, _) = zed::current_platform();
+        let extension = match platform {
+            zed::Os::Windows => ".exe",
+            _ => "",
+        };
+        let target_filename = format!("htmx-lsp{extension}");
+
+        if let Ok(entries) = fs::read_dir(".") {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.starts_with(LANGUAGE_SERVER_ID) && entry.path().is_dir() {
+                        let binary_path = entry.path().join(&target_filename);
+                        if binary_path.is_file() {
+                            return Some(binary_path.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     fn language_server_binary_path(
         &mut self,
         language_server_id: &LanguageServerId,
@@ -26,44 +49,62 @@ impl HtmxExtension {
             }
         }
 
-        // 3. Query latest GitHub release
-        zed::set_language_server_installation_status(
-            language_server_id,
-            &zed::LanguageServerInstallationStatus::CheckingForUpdate,
-        );
-
-        let release = zed::latest_github_release(
-            GITHUB_REPO,
-            zed::GithubReleaseOptions {
-                require_assets: true,
-                pre_release: false,
-            },
-        )?;
-
+        // 3. Validate platform support before attempting any network query
         let (platform, arch) = zed::current_platform();
-        let asset_name = match (platform, arch) {
-            (zed::Os::Mac, zed::Architecture::Aarch64) => "htmx-lsp-darwin-arm64",
-            (zed::Os::Mac, zed::Architecture::X8664) => "htmx-lsp-darwin-x64",
-            (zed::Os::Linux, zed::Architecture::X8664) => "htmx-lsp-linux-x64",
-            (zed::Os::Windows, zed::Architecture::Aarch64) => "htmx-lsp-windows-arm64.exe",
-            (zed::Os::Windows, zed::Architecture::X8664) => "htmx-lsp-windows-x64.exe",
+        let asset_suffix = match (platform, arch) {
+            (zed::Os::Mac, zed::Architecture::Aarch64) => "darwin-arm64",
+            (zed::Os::Mac, zed::Architecture::X8664) => "darwin-x64",
+            (zed::Os::Linux, zed::Architecture::X8664) => "linux-x64",
+            (zed::Os::Windows, zed::Architecture::Aarch64) => "windows-arm64.exe",
+            (zed::Os::Windows, zed::Architecture::X8664) => "windows-x64.exe",
             _ => {
+                if let Some(existing) = self.find_existing_binary() {
+                    self.cached_binary_path = Some(existing.clone());
+                    return Ok(existing);
+                }
                 return Err(format!(
                     "htmx-lsp does not publish prebuilt binaries for {platform:?}-{arch:?}. Please install htmx-lsp on your PATH (e.g., via `cargo install htmx-lsp`)."
                 ));
             }
         };
+        let asset_name = format!("htmx-lsp-{asset_suffix}");
 
-        let asset = release
-            .assets
-            .iter()
-            .find(|a| a.name == asset_name)
-            .ok_or_else(|| {
-                format!(
+        // 4. Query latest GitHub release (with offline fallback to existing on-disk binary)
+        zed::set_language_server_installation_status(
+            language_server_id,
+            &zed::LanguageServerInstallationStatus::CheckingForUpdate,
+        );
+
+        let release = match zed::latest_github_release(
+            GITHUB_REPO,
+            zed::GithubReleaseOptions {
+                require_assets: true,
+                pre_release: false,
+            },
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                if let Some(existing) = self.find_existing_binary() {
+                    self.cached_binary_path = Some(existing.clone());
+                    return Ok(existing);
+                }
+                return Err(e);
+            }
+        };
+
+        let asset = match release.assets.iter().find(|a| a.name == asset_name) {
+            Some(a) => a,
+            None => {
+                if let Some(existing) = self.find_existing_binary() {
+                    self.cached_binary_path = Some(existing.clone());
+                    return Ok(existing);
+                }
+                return Err(format!(
                     "no asset found matching {asset_name:?} in release {}",
                     release.version
-                )
-            })?;
+                ));
+            }
+        };
 
         let version_dir = format!("{LANGUAGE_SERVER_ID}-{}", release.version);
         fs::create_dir_all(&version_dir)
@@ -81,14 +122,40 @@ impl HtmxExtension {
                 &zed::LanguageServerInstallationStatus::Downloading,
             );
 
-            zed::download_file(
+            // Atomic download: download to .download staging file, chmod, then rename
+            let temp_binary_path = format!("{binary_path}.download");
+            let download_result = zed::download_file(
                 &asset.download_url,
-                &binary_path,
+                &temp_binary_path,
                 zed::DownloadedFileType::Uncompressed,
-            )
-            .map_err(|e| format!("failed to download {asset_name}: {e}"))?;
+            );
 
-            zed::make_file_executable(&binary_path)?;
+            if let Err(e) = download_result {
+                fs::remove_file(&temp_binary_path).ok();
+                if let Some(existing) = self.find_existing_binary() {
+                    self.cached_binary_path = Some(existing.clone());
+                    return Ok(existing);
+                }
+                return Err(format!("failed to download {asset_name}: {e}"));
+            }
+
+            if let Err(e) = zed::make_file_executable(&temp_binary_path) {
+                fs::remove_file(&temp_binary_path).ok();
+                if let Some(existing) = self.find_existing_binary() {
+                    self.cached_binary_path = Some(existing.clone());
+                    return Ok(existing);
+                }
+                return Err(e);
+            }
+
+            if let Err(e) = fs::rename(&temp_binary_path, &binary_path) {
+                fs::remove_file(&temp_binary_path).ok();
+                if let Some(existing) = self.find_existing_binary() {
+                    self.cached_binary_path = Some(existing.clone());
+                    return Ok(existing);
+                }
+                return Err(format!("failed to finalize binary installation: {e}"));
+            }
 
             // Clean up older downloaded versions
             if let Ok(entries) = fs::read_dir(".") {
