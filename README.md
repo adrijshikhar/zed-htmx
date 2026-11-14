@@ -64,9 +64,17 @@ If you want to customize the language server (e.g., provide a custom binary path
 
 ### Building the Extension
 
+Using `wasm-tools` (Zed 0.130+ component format):
 ```bash
 cargo build --target wasm32-wasip1 --release
-cp target/wasm32-wasip1/release/zed_htmx.wasm extension.wasm
+wasm-tools component new ./target/wasm32-wasip1/release/zed_htmx.wasm \
+  --adapt wasi_snapshot_preview1=wasi_snapshot_preview1.reactor.wasm \
+  -o extension.wasm
+```
+
+Alternatively, you can load the extension directly into Zed without manual wasm conversion:
+```bash
+zed --install-dev /path/to/zed-htmx
 ```
 
 ### Local Dev Installation in Zed

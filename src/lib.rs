@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::fs;
 use zed_extension_api::{self as zed, settings::LspSettings, LanguageServerId, Result};
 
@@ -21,17 +23,26 @@ impl HtmxExtension {
         ];
 
         if let Ok(entries) = fs::read_dir(".") {
-            for entry in entries.flatten() {
-                if let Some(name) = entry.file_name().to_str() {
-                    if (name.starts_with(LANGUAGE_SERVER_ID) || name.starts_with("htmx-analyzer"))
-                        && entry.path().is_dir()
-                    {
-                        for target in &target_filenames {
-                            let binary_path = entry.path().join(target);
-                            if binary_path.is_file() {
-                                return Some(binary_path.to_string_lossy().to_string());
-                            }
-                        }
+            let mut dirs: Vec<_> = entries
+                .flatten()
+                .filter(|entry| {
+                    if let Some(name) = entry.file_name().to_str() {
+                        (name.starts_with(LANGUAGE_SERVER_ID) || name.starts_with("htmx-analyzer"))
+                            && entry.path().is_dir()
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+
+            // Sort descending by directory name so latest release version is prioritized
+            dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
+
+            for entry in dirs {
+                for target in &target_filenames {
+                    let binary_path = entry.path().join(target);
+                    if binary_path.is_file() {
+                        return Some(binary_path.to_string_lossy().to_string());
                     }
                 }
             }
@@ -173,6 +184,7 @@ impl HtmxExtension {
                         if (file_name.starts_with("htmx-analyzer-")
                             || file_name.starts_with(LANGUAGE_SERVER_ID))
                             && file_name != version_dir
+                            && entry.path().is_dir()
                         {
                             fs::remove_dir_all(entry.path()).ok();
                         }
@@ -206,7 +218,7 @@ impl zed::Extension for HtmxExtension {
         let binary_args = binary_settings
             .as_ref()
             .and_then(|s| s.arguments.clone())
-            .unwrap_or_default();
+            .unwrap_or_else(|| vec!["--stdio".to_string()]);
 
         let env = binary_settings
             .as_ref()
