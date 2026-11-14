@@ -5,6 +5,7 @@ use zed_extension_api::{self as zed, settings::LspSettings, LanguageServerId, Re
 
 const LANGUAGE_SERVER_ID: &str = "htmx-lsp";
 const GITHUB_REPO: &str = "adrijshikhar/htmx-analyzer";
+const BINARY_DIR_PREFIXES: [&str; 2] = [LANGUAGE_SERVER_ID, "htmx-analyzer"];
 
 struct HtmxExtension {
     cached_binary_path: Option<String>,
@@ -13,25 +14,21 @@ struct HtmxExtension {
 impl HtmxExtension {
     fn find_existing_binary(&self) -> Option<String> {
         let (platform, _) = zed::current_platform();
-        let extension = match platform {
-            zed::Os::Windows => ".exe",
-            _ => "",
+        let target_filenames = match platform {
+            zed::Os::Windows => ["htmx-analyzer.exe", "htmx-lsp.exe"],
+            _ => ["htmx-analyzer", "htmx-lsp"],
         };
-        let target_filenames = [
-            format!("htmx-analyzer{extension}"),
-            format!("htmx-lsp{extension}"),
-        ];
 
         if let Ok(entries) = fs::read_dir(".") {
             let mut dirs: Vec<_> = entries
                 .flatten()
                 .filter(|entry| {
-                    if let Some(name) = entry.file_name().to_str() {
-                        (name.starts_with(LANGUAGE_SERVER_ID) || name.starts_with("htmx-analyzer"))
+                    entry.file_name().to_str().is_some_and(|name| {
+                        BINARY_DIR_PREFIXES
+                            .iter()
+                            .any(|prefix| name.starts_with(prefix))
                             && entry.path().is_dir()
-                    } else {
-                        false
-                    }
+                    })
                 })
                 .collect();
 
@@ -39,7 +36,7 @@ impl HtmxExtension {
             dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
 
             for entry in dirs {
-                for target in &target_filenames {
+                for target in target_filenames {
                     let binary_path = entry.path().join(target);
                     if binary_path.is_file() {
                         return Some(binary_path.to_string_lossy().to_string());
@@ -48,6 +45,15 @@ impl HtmxExtension {
             }
         }
         None
+    }
+
+    fn fallback_or_err(&mut self, err: impl Into<String>) -> Result<String> {
+        if let Some(existing) = self.find_existing_binary() {
+            self.cached_binary_path = Some(existing.clone());
+            Ok(existing)
+        } else {
+            Err(err.into())
+        }
     }
 
     fn language_server_binary_path(
@@ -78,11 +84,7 @@ impl HtmxExtension {
             (zed::Os::Linux, zed::Architecture::X8664) => "linux-x64",
             (zed::Os::Windows, zed::Architecture::X8664) => "windows-x64.exe",
             _ => {
-                if let Some(existing) = self.find_existing_binary() {
-                    self.cached_binary_path = Some(existing.clone());
-                    return Ok(existing);
-                }
-                return Err(format!(
+                return self.fallback_or_err(format!(
                     "htmx-analyzer does not publish prebuilt binaries for {platform:?}-{arch:?}. Please install htmx-analyzer on your PATH."
                 ));
             }
@@ -103,23 +105,13 @@ impl HtmxExtension {
             },
         ) {
             Ok(r) => r,
-            Err(e) => {
-                if let Some(existing) = self.find_existing_binary() {
-                    self.cached_binary_path = Some(existing.clone());
-                    return Ok(existing);
-                }
-                return Err(e);
-            }
+            Err(e) => return self.fallback_or_err(e),
         };
 
         let asset = match release.assets.iter().find(|a| a.name == asset_name) {
             Some(a) => a,
             None => {
-                if let Some(existing) = self.find_existing_binary() {
-                    self.cached_binary_path = Some(existing.clone());
-                    return Ok(existing);
-                }
-                return Err(format!(
+                return self.fallback_or_err(format!(
                     "no asset found matching {asset_name:?} in release {}",
                     release.version
                 ));
@@ -152,42 +144,32 @@ impl HtmxExtension {
 
             if let Err(e) = download_result {
                 fs::remove_file(&temp_binary_path).ok();
-                if let Some(existing) = self.find_existing_binary() {
-                    self.cached_binary_path = Some(existing.clone());
-                    return Ok(existing);
-                }
-                return Err(format!("failed to download {asset_name}: {e}"));
+                return self.fallback_or_err(format!("failed to download {asset_name}: {e}"));
             }
 
             if let Err(e) = zed::make_file_executable(&temp_binary_path) {
                 fs::remove_file(&temp_binary_path).ok();
-                if let Some(existing) = self.find_existing_binary() {
-                    self.cached_binary_path = Some(existing.clone());
-                    return Ok(existing);
-                }
-                return Err(e);
+                return self.fallback_or_err(e);
             }
 
             if let Err(e) = fs::rename(&temp_binary_path, &binary_path) {
                 fs::remove_file(&temp_binary_path).ok();
-                if let Some(existing) = self.find_existing_binary() {
-                    self.cached_binary_path = Some(existing.clone());
-                    return Ok(existing);
-                }
-                return Err(format!("failed to finalize binary installation: {e}"));
+                return self
+                    .fallback_or_err(format!("failed to finalize binary installation: {e}"));
             }
 
             // Clean up older downloaded versions
             if let Ok(entries) = fs::read_dir(".") {
                 for entry in entries.flatten() {
-                    if let Some(file_name) = entry.file_name().to_str() {
-                        if (file_name.starts_with("htmx-analyzer-")
-                            || file_name.starts_with(LANGUAGE_SERVER_ID))
-                            && file_name != version_dir
+                    let is_old_dir = entry.file_name().to_str().is_some_and(|name| {
+                        BINARY_DIR_PREFIXES
+                            .iter()
+                            .any(|prefix| name.starts_with(prefix))
+                            && name != version_dir
                             && entry.path().is_dir()
-                        {
-                            fs::remove_dir_all(entry.path()).ok();
-                        }
+                    });
+                    if is_old_dir {
+                        fs::remove_dir_all(entry.path()).ok();
                     }
                 }
             }
@@ -215,29 +197,27 @@ impl zed::Extension for HtmxExtension {
             .ok()
             .and_then(|lsp_settings| lsp_settings.binary);
 
-        let binary_args = binary_settings
-            .as_ref()
-            .and_then(|s| s.arguments.clone())
-            .unwrap_or_else(|| vec!["--stdio".to_string()]);
+        let (binary_path_override, binary_args, env) = match binary_settings {
+            Some(settings) => {
+                let args = settings
+                    .arguments
+                    .unwrap_or_else(|| vec!["--stdio".to_string()]);
+                let env = settings
+                    .env
+                    .map(|m| m.into_iter().collect())
+                    .unwrap_or_default();
+                (settings.path, args, env)
+            }
+            None => (None, vec!["--stdio".to_string()], Vec::new()),
+        };
 
-        let env = binary_settings
-            .as_ref()
-            .and_then(|s| s.env.clone())
-            .map(|env| env.into_iter().collect())
-            .unwrap_or_default();
-
-        if let Some(path) = binary_settings.and_then(|s| s.path) {
-            return Ok(zed::Command {
-                command: path,
-                args: binary_args,
-                env,
-            });
-        }
-
-        let binary_path = self.language_server_binary_path(language_server_id, worktree)?;
+        let command = match binary_path_override {
+            Some(path) => path,
+            None => self.language_server_binary_path(language_server_id, worktree)?,
+        };
 
         Ok(zed::Command {
-            command: binary_path,
+            command,
             args: binary_args,
             env,
         })
@@ -255,8 +235,8 @@ impl zed::Extension for HtmxExtension {
     fn language_server_initialization_options(
         &mut self,
         server_id: &LanguageServerId,
-        worktree: &zed_extension_api::Worktree,
-    ) -> Result<Option<zed_extension_api::serde_json::Value>> {
+        worktree: &zed::Worktree,
+    ) -> Result<Option<zed::serde_json::Value>> {
         LspSettings::for_worktree(server_id.as_ref(), worktree)
             .map(|lsp_settings| lsp_settings.initialization_options)
     }

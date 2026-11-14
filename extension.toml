@@ -11,6 +11,7 @@ kind = "Rust"
 version = "0.7.0"
 
 [language_servers.htmx-lsp]
+name = "htmx-analyzer"
 language = "HTML"
 languages = ["HTML"]
 

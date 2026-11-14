@@ -1,8 +1,62 @@
 #!/usr/bin/env python3
 import json
+import queue
 import subprocess
 import sys
+import threading
 import time
+from pathlib import Path
+
+class ProcessReader:
+    """Threaded reader queue to safely and portably read stdout on all platforms (POSIX + Windows)."""
+    def __init__(self, stdout):
+        self.stdout = stdout
+        self.queue = queue.Queue()
+        self.thread = threading.Thread(target=self._reader_thread, daemon=True)
+        self.thread.start()
+
+    def _reader_thread(self):
+        try:
+            while True:
+                ch = self.stdout.read(1)
+                if not ch:
+                    self.queue.put((None, EOFError("stdout closed")))
+                    break
+                self.queue.put((ch, None))
+        except Exception as e:
+            self.queue.put((None, e))
+
+    def read_exact(self, count, timeout=5):
+        start = time.time()
+        buf = bytearray()
+        while len(buf) < count:
+            remaining = timeout - (time.time() - start)
+            if remaining <= 0:
+                raise TimeoutError("Timed out reading data from server")
+            try:
+                ch, err = self.queue.get(timeout=remaining)
+            except queue.Empty:
+                raise TimeoutError("Timed out waiting for server output")
+            if err:
+                raise err
+            buf.extend(ch)
+        return bytes(buf)
+
+    def read_until(self, delimiter: bytes, timeout=5):
+        start = time.time()
+        buf = bytearray()
+        while delimiter not in buf:
+            remaining = timeout - (time.time() - start)
+            if remaining <= 0:
+                raise TimeoutError(f"Timed out waiting for header delimiter: {buf!r}")
+            try:
+                ch, err = self.queue.get(timeout=remaining)
+            except queue.Empty:
+                raise TimeoutError("Timed out waiting for server output")
+            if err:
+                raise err
+            buf.extend(ch)
+        return bytes(buf)
 
 def send_msg(proc, payload):
     body = json.dumps(payload).encode("utf-8")
@@ -10,44 +64,29 @@ def send_msg(proc, payload):
     proc.stdin.write(header + body)
     proc.stdin.flush()
 
-def read_msg(proc, timeout=5):
-    start = time.time()
-    header_bytes = b""
-    while b"\r\n\r\n" not in header_bytes:
-        if time.time() - start > timeout:
-            raise TimeoutError("Timed out reading header")
-        ch = proc.stdout.read(1)
-        if not ch:
-            raise EOFError("Server stdout closed")
-        header_bytes += ch
-
+def read_msg(reader, timeout=5):
+    header_bytes = reader.read_until(b"\r\n\r\n", timeout=timeout)
     headers = header_bytes.decode("utf-8")
     content_len = 0
     for line in headers.split("\r\n"):
         if line.lower().startswith("content-length:"):
             content_len = int(line.split(":")[1].strip())
 
-    body = b""
-    while len(body) < content_len:
-        if time.time() - start > timeout:
-            raise TimeoutError("Timed out reading body")
-        chunk = proc.stdout.read(content_len - len(body))
-        if not chunk:
-            raise EOFError("Server stdout closed during body read")
-        body += chunk
-
+    body = reader.read_exact(content_len, timeout=timeout)
     return json.loads(body.decode("utf-8"))
 
 def main():
     print("=== STARTING E2E LSP PROTOCOL VERIFICATION ===")
+    repo_root = Path(__file__).resolve().parent.parent
     server_path = "htmx-analyzer"
     print(f"[1] Spawning server process: {server_path}")
     proc = subprocess.Popen(
         [server_path, "--stdio"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
     )
+    reader = ProcessReader(proc.stdout)
 
     try:
         # Step 1: Initialize
@@ -58,7 +97,7 @@ def main():
             "method": "initialize",
             "params": {
                 "processId": None,
-                "rootUri": "file:///Users/nemesis/Projects/my-projects/zed-htmx",
+                "rootUri": repo_root.as_uri(),
                 "capabilities": {
                     "textDocument": {
                         "hover": {"contentFormat": ["markdown"]},
@@ -69,7 +108,7 @@ def main():
             }
         }
         send_msg(proc, init_req)
-        init_resp = read_msg(proc)
+        init_resp = read_msg(reader)
         assert init_resp["id"] == 1, f"Expected id 1, got {init_resp}"
         caps = init_resp["result"]["capabilities"]
         assert "hoverProvider" in caps, "Missing hoverProvider in capabilities"
@@ -81,9 +120,9 @@ def main():
         send_msg(proc, {"jsonrpc": "2.0", "method": "initialized", "params": {}})
 
         # Step 3: didOpen test.html
-        test_file_uri = "file:///Users/nemesis/Projects/my-projects/zed-htmx/tests/test.html"
-        with open("/Users/nemesis/Projects/my-projects/zed-htmx/tests/test.html", "r", encoding="utf-8") as f:
-            test_content = f.read()
+        test_file_path = Path(__file__).resolve().parent / "test.html"
+        test_file_uri = test_file_path.as_uri()
+        test_content = test_file_path.read_text(encoding="utf-8")
 
         print("[3] Sending 'textDocument/didOpen' for test.html...")
         send_msg(proc, {
@@ -100,7 +139,7 @@ def main():
         })
 
         # Expect diagnostics publication
-        diag_msg = read_msg(proc)
+        diag_msg = read_msg(reader)
         assert diag_msg["method"] == "textDocument/publishDiagnostics"
         diags = diag_msg["params"]["diagnostics"]
         print(f"    -> Diagnostics on initial valid test.html: {len(diags)} (expected 0)")
@@ -117,7 +156,7 @@ def main():
                 "position": {"line": 7, "character": 14}
             }
         })
-        hover_resp = read_msg(proc)
+        hover_resp = read_msg(reader)
         assert hover_resp["id"] == 2
         hover_val = hover_resp["result"]["contents"]["value"]
         assert "hx-get" in hover_val, f"Expected hx-get in hover, got {hover_val}"
@@ -135,7 +174,7 @@ def main():
                 "position": {"line": 7, "character": 35}
             }
         })
-        hover_resp = read_msg(proc)
+        hover_resp = read_msg(reader)
         assert hover_resp["id"] == 3
         hover_val = hover_resp["result"]["contents"]["value"]
         assert "hx-target" in hover_val
@@ -152,7 +191,7 @@ def main():
                 "position": {"line": 7, "character": 65}
             }
         })
-        hover_resp = read_msg(proc)
+        hover_resp = read_msg(reader)
         assert hover_resp["id"] == 4
         hover_val = hover_resp["result"]["contents"]["value"]
         assert "outerHTML" in hover_val
@@ -170,7 +209,7 @@ def main():
                 "position": {"line": 7, "character": 14}
             }
         })
-        comp_resp = read_msg(proc)
+        comp_resp = read_msg(reader)
         assert comp_resp["id"] == 5
         res = comp_resp["result"]
         items = res if isinstance(res, list) else res["items"]
@@ -199,7 +238,7 @@ def main():
         })
 
         # Expect updated diagnostics
-        diag_msg = read_msg(proc)
+        diag_msg = read_msg(reader)
         assert diag_msg["method"] == "textDocument/publishDiagnostics"
         diags = diag_msg["params"]["diagnostics"]
         print(f"    -> Diagnostics updated: {len(diags)} reported")
@@ -223,7 +262,7 @@ def main():
                 }
             }
         })
-        ca_resp = read_msg(proc)
+        ca_resp = read_msg(reader)
         assert ca_resp["id"] == 6
         actions = ca_resp["result"]
         assert len(actions) > 0, "Expected at least 1 code action"
@@ -236,7 +275,7 @@ def main():
         # Step 10: Shutdown & Exit
         print("[10] Testing clean shutdown & exit protocol...")
         send_msg(proc, {"jsonrpc": "2.0", "id": 7, "method": "shutdown", "params": None})
-        shutdown_resp = read_msg(proc)
+        shutdown_resp = read_msg(reader)
         assert shutdown_resp["id"] == 7
         assert shutdown_resp["result"] is None
         send_msg(proc, {"jsonrpc": "2.0", "method": "exit", "params": None})
