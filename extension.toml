@@ -1,0 +1,14 @@
+id = "htmx-lsp"
+name = "HTMX"
+version = "0.1.0"
+schema_version = 1
+authors = ["Adrij Shikhar <adrijshikhar@gmail.com>"]
+description = "HTMX language server integration for Zed, powered by ThePrimeagen/htmx-lsp."
+repository = "https://github.com/adrijshikhar/zed-htmx"
+
+[language_servers.htmx-lsp]
+name = "HTMX Language Server"
+languages = ["HTML"]
+
+[language_servers.htmx-lsp.language_ids]
+"HTML" = "html"
