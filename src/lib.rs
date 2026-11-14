@@ -2,7 +2,7 @@ use std::fs;
 use zed_extension_api::{self as zed, settings::LspSettings, LanguageServerId, Result};
 
 const LANGUAGE_SERVER_ID: &str = "htmx-lsp";
-const GITHUB_REPO: &str = "ThePrimeagen/htmx-lsp";
+const GITHUB_REPO: &str = "adrijshikhar/htmx-analyzer";
 
 struct HtmxExtension {
     cached_binary_path: Option<String>,
@@ -15,15 +15,22 @@ impl HtmxExtension {
             zed::Os::Windows => ".exe",
             _ => "",
         };
-        let target_filename = format!("htmx-lsp{extension}");
+        let target_filenames = [
+            format!("htmx-analyzer{extension}"),
+            format!("htmx-lsp{extension}"),
+        ];
 
         if let Ok(entries) = fs::read_dir(".") {
             for entry in entries.flatten() {
                 if let Some(name) = entry.file_name().to_str() {
-                    if name.starts_with(LANGUAGE_SERVER_ID) && entry.path().is_dir() {
-                        let binary_path = entry.path().join(&target_filename);
-                        if binary_path.is_file() {
-                            return Some(binary_path.to_string_lossy().to_string());
+                    if (name.starts_with(LANGUAGE_SERVER_ID) || name.starts_with("htmx-analyzer"))
+                        && entry.path().is_dir()
+                    {
+                        for target in &target_filenames {
+                            let binary_path = entry.path().join(target);
+                            if binary_path.is_file() {
+                                return Some(binary_path.to_string_lossy().to_string());
+                            }
                         }
                     }
                 }
@@ -38,6 +45,9 @@ impl HtmxExtension {
         worktree: &zed::Worktree,
     ) -> Result<String> {
         // 1. Check system PATH first
+        if let Some(path) = worktree.which("htmx-analyzer") {
+            return Ok(path);
+        }
         if let Some(path) = worktree.which("htmx-lsp") {
             return Ok(path);
         }
@@ -55,7 +65,6 @@ impl HtmxExtension {
             (zed::Os::Mac, zed::Architecture::Aarch64) => "darwin-arm64",
             (zed::Os::Mac, zed::Architecture::X8664) => "darwin-x64",
             (zed::Os::Linux, zed::Architecture::X8664) => "linux-x64",
-            (zed::Os::Windows, zed::Architecture::Aarch64) => "windows-arm64.exe",
             (zed::Os::Windows, zed::Architecture::X8664) => "windows-x64.exe",
             _ => {
                 if let Some(existing) = self.find_existing_binary() {
@@ -63,11 +72,11 @@ impl HtmxExtension {
                     return Ok(existing);
                 }
                 return Err(format!(
-                    "htmx-lsp does not publish prebuilt binaries for {platform:?}-{arch:?}. Please install htmx-lsp on your PATH (e.g., via `cargo install htmx-lsp`)."
+                    "htmx-analyzer does not publish prebuilt binaries for {platform:?}-{arch:?}. Please install htmx-analyzer on your PATH."
                 ));
             }
         };
-        let asset_name = format!("htmx-lsp-{asset_suffix}");
+        let asset_name = format!("htmx-analyzer-{asset_suffix}");
 
         // 4. Query latest GitHub release (with offline fallback to existing on-disk binary)
         zed::set_language_server_installation_status(
@@ -106,7 +115,7 @@ impl HtmxExtension {
             }
         };
 
-        let version_dir = format!("{LANGUAGE_SERVER_ID}-{}", release.version);
+        let version_dir = format!("htmx-analyzer-{}", release.version);
         fs::create_dir_all(&version_dir)
             .map_err(|e| format!("failed to create directory {version_dir}: {e}"))?;
 
@@ -114,7 +123,7 @@ impl HtmxExtension {
             zed::Os::Windows => ".exe",
             _ => "",
         };
-        let binary_path = format!("{version_dir}/htmx-lsp{extension}");
+        let binary_path = format!("{version_dir}/htmx-analyzer{extension}");
 
         if !fs::metadata(&binary_path).is_ok_and(|stat| stat.is_file()) {
             zed::set_language_server_installation_status(
@@ -161,7 +170,10 @@ impl HtmxExtension {
             if let Ok(entries) = fs::read_dir(".") {
                 for entry in entries.flatten() {
                     if let Some(file_name) = entry.file_name().to_str() {
-                        if file_name.starts_with(LANGUAGE_SERVER_ID) && file_name != version_dir {
+                        if (file_name.starts_with("htmx-analyzer-")
+                            || file_name.starts_with(LANGUAGE_SERVER_ID))
+                            && file_name != version_dir
+                        {
                             fs::remove_dir_all(entry.path()).ok();
                         }
                     }

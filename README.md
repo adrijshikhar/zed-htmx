@@ -2,20 +2,23 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[HTMX](https://htmx.org/) language server extension for [Zed](https://zed.dev), powered by [`ThePrimeagen/htmx-lsp`](https://github.com/ThePrimeagen/htmx-lsp).
+[HTMX](https://htmx.org/) language server extension for [Zed](https://zed.dev), powered by [`adrijshikhar/htmx-analyzer`](https://github.com/adrijshikhar/htmx-analyzer).
 
-Provides intelligent completion and documentation for `hx-*` attributes in HTML templates.
+Provides intelligent completion, rich hover documentation, static analysis diagnostics, and quick-fixes for HTMX 2.0 and HTMX 1.x in HTML templates.
 
 ---
 
 ## Features
 
-- **Attribute Autocompletion:** Smart autocompletions for all core HTMX attributes (`hx-get`, `hx-post`, `hx-target`, `hx-swap`, `hx-trigger`, `hx-indicator`, and more).
-- **Attribute Value Suggestions:** Contextual values for attributes such as `hx-swap` (`innerHTML`, `outerHTML`, `beforebegin`, `afterend`, etc.).
-- **Hover Documentation:** In-editor documentation and usage guides when hovering over HTMX attributes.
-- **Zero Configuration:** Automatically downloads the appropriate prebuilt `htmx-lsp` binary for your operating system and architecture on first use.
+- **HTMX 2.0 Native Support:** Full schema coverage for all 33 HTMX 2.0 attributes, including `hx-on:<event>` inline event handlers.
+- **Diagnostics & Static Analysis:** Real-time diagnostics for deprecated attributes (`HTMX001`), invalid swap styles (`HTMX002`), malformed trigger durations (`HTMX003`), and unresolvable DOM target IDs (`HTMX004`).
+- **Quick-Fix Code Actions:** Automated migration actions upgrading deprecated HTMX 1.x features (such as `hx-ws` and `hx-sse`) to modern HTMX 2.0 extensions (`hx-ext="ws"` / `hx-ext="sse"`).
+- **Attribute Autocompletion:** Smart autocompletions for all core HTMX attributes (`hx-get`, `hx-post`, `hx-target`, `hx-swap`, `hx-trigger`, `hx-on:*`, `hx-ext`, etc.) and their `data-hx-*` equivalents.
+- **Attribute Value Suggestions:** Contextual values for swap styles (`innerHTML`, `outerHTML`, `textContent`), target selectors (`#id`, `closest`, `find`, `this`), trigger events, and modifiers (`transition:true`, `swap:`, `settle:`).
+- **Hover Documentation:** Rich Markdown documentation, attribute summaries, parameter details, and official HTMX documentation links on hover.
+- **Zero Configuration:** Automatically downloads the appropriate prebuilt `htmx-analyzer` binary for your operating system and architecture on first use.
 - **Seamless Coexistence:** Runs concurrently alongside Zed's built-in HTML language server, Emmet, and Tailwind CSS.
-- **Offline / Custom Binary Fallback:** Detects `htmx-lsp` on your system `PATH` if already installed (e.g., via `cargo install htmx-lsp` or Homebrew).
+- **Offline / Custom Binary Fallback:** Detects `htmx-analyzer` (or `htmx-lsp`) on your system `PATH` if installed locally.
 
 ---
 
@@ -23,8 +26,8 @@ Provides intelligent completion and documentation for `hx-*` attributes in HTML 
 
 Prebuilt binaries are automatically fetched from GitHub releases for:
 - **macOS:** Apple Silicon (`arm64`) and Intel (`x86_64`)
-- **Linux:** `x86_64` (for Linux `arm64`, install `htmx-lsp` on your `PATH` via `cargo install htmx-lsp`)
-- **Windows:** `x86_64` and `arm64`
+- **Linux:** `x86_64` musl (for Linux `arm64`, install `htmx-analyzer` on your `PATH`)
+- **Windows:** `x86_64`
 
 ---
 
@@ -39,8 +42,8 @@ If you want to customize the language server (e.g., provide a custom binary path
   "lsp": {
     "htmx-lsp": {
       "binary": {
-        "path": "/usr/local/bin/htmx-lsp",
-        "arguments": ["--level", "DEBUG"]
+        "path": "/usr/local/bin/htmx-analyzer",
+        "arguments": ["--verbose"]
       }
     }
   }
@@ -54,15 +57,16 @@ If you want to customize the language server (e.g., provide a custom binary path
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (edition 2021)
-- `wasm32-wasip2` target:
+- `wasm32-wasip1` target:
   ```bash
-  rustup target add wasm32-wasip2
+  rustup target add wasm32-wasip1
   ```
 
 ### Building the Extension
 
 ```bash
-cargo build --target wasm32-wasip2 --release
+cargo build --target wasm32-wasip1 --release
+cp target/wasm32-wasip1/release/zed_htmx.wasm extension.wasm
 ```
 
 ### Local Dev Installation in Zed
@@ -76,7 +80,7 @@ cargo build --target wasm32-wasip2 --release
 
 ## Credits
 
-- Language server implementation: [ThePrimeagen/htmx-lsp](https://github.com/ThePrimeagen/htmx-lsp).
+- Language server implementation: [adrijshikhar/htmx-analyzer](https://github.com/adrijshikhar/htmx-analyzer).
 - Created for the [Zed](https://zed.dev) editor community.
 
 ---
