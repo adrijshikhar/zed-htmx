@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HTMX Test</title>
+</head>
+<body>
+    <button hx-get="/clicked" hx-target="#parent-div" hx-swap="outerHTML">
+        Click Me
+    </button>
+    <div id="parent-div"></div>
+</body>
+</html>
