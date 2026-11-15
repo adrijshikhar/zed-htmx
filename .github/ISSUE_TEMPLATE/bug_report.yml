@@ -1,0 +1,48 @@
+name: "Bug Report"
+description: "Report a bug with the zed-htmx extension."
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue with the Zed HTMX extension!
+  - type: input
+    id: zed_version
+    attributes:
+      label: "Zed Version"
+      description: "Run `zed --version` or check Zed > About Zed."
+      placeholder: "e.g., Zed 0.160.7"
+    validations:
+      required: true
+  - type: input
+    id: extension_version
+    attributes:
+      label: "Extension Version"
+      description: "Installed version of zed-htmx."
+      placeholder: "e.g., 0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: "Operating System & Architecture"
+      description: "Your OS and CPU architecture."
+      placeholder: "e.g., macOS Sequoia 15.1 (arm64), Ubuntu 24.04 (x86_64)"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: "Describe the Issue"
+      description: "What went wrong?"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Zed Logs / Language Server Output"
+      description: "Open Zed log (`zed: open log` in Command Palette) and paste relevant output."
+      render: text
+    validations:
+      required: false

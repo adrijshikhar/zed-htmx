@@ -1,0 +1,23 @@
+name: "Feature Request"
+description: "Suggest a feature or improvement for the zed-htmx extension."
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to improve the Zed HTMX extension? Let us know!
+  - type: textarea
+    id: description
+    attributes:
+      label: "Feature Proposal"
+      description: "Describe the feature and why it would be useful."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives Considered"
+      description: "Any alternative approaches or configurations you considered."
+    validations:
+      required: false

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions / Questions
+    url: https://github.com/adrijshikhar/zed-htmx/discussions
+    about: Ask questions, share ideas, and discuss the Zed HTMX extension.
+  - name: htmx-analyzer (Core Language Server)
+    url: https://github.com/adrijshikhar/htmx-analyzer
+    about: Language server engine issue tracker for core parsing and diagnostics.
+  - name: Security Vulnerability Reporting
+    url: https://github.com/adrijshikhar/zed-htmx/security/advisories/new
+    about: Privately report a security issue.
