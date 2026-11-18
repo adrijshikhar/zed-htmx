@@ -32,3 +32,45 @@ jobs:
 
       - name: Clippy check
         run: cargo clippy --target wasm32-wasip2 --release -- -D warnings
+
+  test:
+    name: Host Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+
+      - name: Run host tests
+        run: cargo test --locked
+
+  pinned:
+    name: Pinned Hashes Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Filter pinned changes
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            pinned:
+              - 'src/pinned.rs'
+              - 'scripts/pin-server.sh'
+
+      - name: Verify pinned hashes
+        if: steps.filter.outputs.pinned == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f ./scripts/pin-server.sh ]; then
+            ./scripts/pin-server.sh --check
+          else
+            echo "scripts/pin-server.sh not yet created (pending v0.2.0 release); skipping"
+          fi

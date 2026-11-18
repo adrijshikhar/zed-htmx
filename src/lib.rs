@@ -1,61 +1,18 @@
 #![forbid(unsafe_code)]
 
+mod install;
+mod pinned;
+
 use std::fs;
 use zed_extension_api::{self as zed, settings::LspSettings, LanguageServerId, Result};
 
-const LANGUAGE_SERVER_ID: &str = "htmx-lsp";
-const GITHUB_REPO: &str = "adrijshikhar/htmx-analyzer";
-const BINARY_DIR_PREFIXES: [&str; 2] = [LANGUAGE_SERVER_ID, "htmx-analyzer"];
+const LANGUAGE_SERVER_ID: &str = "htmx-analyzer";
 
 struct HtmxExtension {
     cached_binary_path: Option<String>,
 }
 
 impl HtmxExtension {
-    fn find_existing_binary(&self) -> Option<String> {
-        let (platform, _) = zed::current_platform();
-        let target_filenames = match platform {
-            zed::Os::Windows => ["htmx-analyzer.exe", "htmx-lsp.exe"],
-            _ => ["htmx-analyzer", "htmx-lsp"],
-        };
-
-        if let Ok(entries) = fs::read_dir(".") {
-            let mut dirs: Vec<_> = entries
-                .flatten()
-                .filter(|entry| {
-                    entry.file_name().to_str().is_some_and(|name| {
-                        BINARY_DIR_PREFIXES
-                            .iter()
-                            .any(|prefix| name.starts_with(prefix))
-                            && entry.path().is_dir()
-                    })
-                })
-                .collect();
-
-            // Sort descending by directory name so latest release version is prioritized
-            dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
-
-            for entry in dirs {
-                for target in target_filenames {
-                    let binary_path = entry.path().join(target);
-                    if binary_path.is_file() {
-                        return Some(binary_path.to_string_lossy().to_string());
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    fn fallback_or_err(&mut self, err: impl Into<String>) -> Result<String> {
-        if let Some(existing) = self.find_existing_binary() {
-            self.cached_binary_path = Some(existing.clone());
-            Ok(existing)
-        } else {
-            Err(err.into())
-        }
-    }
-
     fn language_server_binary_path(
         &mut self,
         language_server_id: &LanguageServerId,
@@ -63,9 +20,6 @@ impl HtmxExtension {
     ) -> Result<String> {
         // 1. Check system PATH first
         if let Some(path) = worktree.which("htmx-analyzer") {
-            return Ok(path);
-        }
-        if let Some(path) = worktree.which("htmx-lsp") {
             return Ok(path);
         }
 
@@ -76,100 +30,70 @@ impl HtmxExtension {
             }
         }
 
-        // 3. Validate platform support before attempting any network query
-        let (platform, arch) = zed::current_platform();
-        let asset_suffix = match (platform, arch) {
-            (zed::Os::Mac, zed::Architecture::Aarch64) => "darwin-arm64",
-            (zed::Os::Mac, zed::Architecture::X8664) => "darwin-x64",
-            (zed::Os::Linux, zed::Architecture::X8664) => "linux-x64",
-            (zed::Os::Windows, zed::Architecture::X8664) => "windows-x64.exe",
-            _ => {
-                return self.fallback_or_err(format!(
-                    "htmx-analyzer does not publish prebuilt binaries for {platform:?}-{arch:?}. Please install htmx-analyzer on your PATH."
-                ));
-            }
-        };
-        let asset_name = format!("htmx-analyzer-{asset_suffix}");
+        // 3. Platform check
+        let (os, arch) = zed::current_platform();
+        let key = install::platform_key(os, arch)
+            .ok_or_else(|| install::unsupported_platform_message(os, arch))?;
+        let (asset_name, expected_sha) = install::pinned_asset(key)
+            .ok_or_else(|| install::unsupported_platform_message(os, arch))?;
 
-        // 4. Query latest GitHub release (with offline fallback to existing on-disk binary)
-        zed::set_language_server_installation_status(
-            language_server_id,
-            &zed::LanguageServerInstallationStatus::CheckingForUpdate,
-        );
-
-        let release = match zed::latest_github_release(
-            GITHUB_REPO,
-            zed::GithubReleaseOptions {
-                require_assets: true,
-                pre_release: false,
-            },
-        ) {
-            Ok(r) => r,
-            Err(e) => return self.fallback_or_err(e),
-        };
-
-        let asset = match release.assets.iter().find(|a| a.name == asset_name) {
-            Some(a) => a,
-            None => {
-                return self.fallback_or_err(format!(
-                    "no asset found matching {asset_name:?} in release {}",
-                    release.version
-                ));
-            }
-        };
-
-        let version_dir = format!("htmx-analyzer-{}", release.version);
-        fs::create_dir_all(&version_dir)
-            .map_err(|e| format!("failed to create directory {version_dir}: {e}"))?;
-
-        let extension = match platform {
+        let version_dir = format!("htmx-analyzer-{}", pinned::SERVER_TAG);
+        let extension = match os {
             zed::Os::Windows => ".exe",
             _ => "",
         };
         let binary_path = format!("{version_dir}/htmx-analyzer{extension}");
 
         if !fs::metadata(&binary_path).is_ok_and(|stat| stat.is_file()) {
+            fs::create_dir_all(&version_dir)
+                .map_err(|e| format!("failed to create directory {version_dir}: {e}"))?;
+
             zed::set_language_server_installation_status(
                 language_server_id,
                 &zed::LanguageServerInstallationStatus::Downloading,
             );
 
-            // Atomic download: download to .download staging file, chmod, then rename
+            let download_url = format!(
+                "https://github.com/adrijshikhar/htmx-analyzer/releases/download/{}/{asset_name}",
+                pinned::SERVER_TAG
+            );
             let temp_binary_path = format!("{binary_path}.download");
+
             let download_result = zed::download_file(
-                &asset.download_url,
+                &download_url,
                 &temp_binary_path,
                 zed::DownloadedFileType::Uncompressed,
             );
 
             if let Err(e) = download_result {
-                fs::remove_file(&temp_binary_path).ok();
-                return self.fallback_or_err(format!("failed to download {asset_name}: {e}"));
+                let _ = fs::remove_file(&temp_binary_path);
+                return Err(format!("failed to download {asset_name}: {e}"));
+            }
+
+            if let Err(e) = install::verify_download(&temp_binary_path, expected_sha) {
+                let _ = fs::remove_file(&temp_binary_path);
+                return Err(e);
             }
 
             if let Err(e) = zed::make_file_executable(&temp_binary_path) {
-                fs::remove_file(&temp_binary_path).ok();
-                return self.fallback_or_err(e);
+                let _ = fs::remove_file(&temp_binary_path);
+                return Err(e);
             }
 
             if let Err(e) = fs::rename(&temp_binary_path, &binary_path) {
-                fs::remove_file(&temp_binary_path).ok();
-                return self
-                    .fallback_or_err(format!("failed to finalize binary installation: {e}"));
+                let _ = fs::remove_file(&temp_binary_path);
+                return Err(format!("failed to finalize binary installation: {e}"));
             }
 
-            // Clean up older downloaded versions
+            // Delete stale dirs only after successful install
             if let Ok(entries) = fs::read_dir(".") {
                 for entry in entries.flatten() {
-                    let is_old_dir = entry.file_name().to_str().is_some_and(|name| {
-                        BINARY_DIR_PREFIXES
-                            .iter()
-                            .any(|prefix| name.starts_with(prefix))
-                            && name != version_dir
-                            && entry.path().is_dir()
-                    });
-                    if is_old_dir {
-                        fs::remove_dir_all(entry.path()).ok();
+                    if let Ok(file_name) = entry.file_name().into_string() {
+                        if entry.path().is_dir()
+                            && install::is_stale_install_dir(&file_name, &version_dir)
+                        {
+                            let _ = fs::remove_dir_all(entry.path());
+                        }
                     }
                 }
             }
