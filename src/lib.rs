@@ -3,7 +3,7 @@
 use std::fs;
 use zed_extension_api::{self as zed, settings::LspSettings, LanguageServerId, Result};
 
-const LANGUAGE_SERVER_ID: &str = "htmx-lsp";
+const LANGUAGE_SERVER_ID: &str = "htmx-analyzer";
 const GITHUB_REPO: &str = "adrijshikhar/htmx-analyzer";
 const BINARY_DIR_PREFIXES: [&str; 2] = [LANGUAGE_SERVER_ID, "htmx-analyzer"];
 
