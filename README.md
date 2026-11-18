@@ -4,30 +4,37 @@
 
 [HTMX](https://htmx.org/) language server extension for [Zed](https://zed.dev), powered by [`adrijshikhar/htmx-analyzer`](https://github.com/adrijshikhar/htmx-analyzer).
 
-Provides intelligent completion, rich hover documentation, static analysis diagnostics, and quick-fixes for HTMX 2.0 and HTMX 1.x in HTML templates.
+Provides intelligent completion, rich hover documentation, static analysis diagnostics, and quick-fixes for HTMX in HTML and server template languages.
 
 ---
 
-## Features
+## Installation
 
-- **HTMX 2.0 Native Support:** Full schema coverage for all 33 HTMX 2.0 attributes, including `hx-on:<event>` inline event handlers.
-- **Diagnostics & Static Analysis:** Real-time diagnostics for deprecated attributes (`HTMX001`), invalid swap styles (`HTMX002`), malformed trigger durations (`HTMX003`), and unresolvable DOM target IDs (`HTMX004`).
-- **Quick-Fix Code Actions:** Automated migration actions upgrading deprecated HTMX 1.x features (such as `hx-ws` and `hx-sse`) to modern HTMX 2.0 extensions (`hx-ext="ws"` / `hx-ext="sse"`).
-- **Attribute Autocompletion:** Smart autocompletions for all core HTMX attributes (`hx-get`, `hx-post`, `hx-target`, `hx-swap`, `hx-trigger`, `hx-on:*`, `hx-ext`, etc.) and their `data-hx-*` equivalents.
-- **Attribute Value Suggestions:** Contextual values for swap styles (`innerHTML`, `outerHTML`, `textContent`), target selectors (`#id`, `closest`, `find`, `this`), trigger events, and modifiers (`transition:true`, `swap:`, `settle:`).
-- **Hover Documentation:** Rich Markdown documentation, attribute summaries, parameter details, and official HTMX documentation links on hover.
-- **Zero Configuration:** Automatically downloads the appropriate prebuilt `htmx-analyzer` binary for your operating system and architecture on first use.
-- **Seamless Coexistence:** Runs concurrently alongside Zed's built-in HTML language server, Emmet, and Tailwind CSS.
-- **Offline / Custom Binary Fallback:** Detects `htmx-analyzer` (or `htmx-lsp`) on your system `PATH` if installed locally.
+Install the extension directly from Zed:
+1. Open the Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Linux/Windows).
+2. Select **`zed: extensions`**.
+3. Search for **`HTMX`** and click **Install**.
+
+On first use, the extension downloads the pinned, verified `htmx-analyzer` binary for your platform.
 
 ---
 
-## Supported Platforms
+## Supported Languages
 
-Prebuilt binaries are automatically fetched from GitHub releases for:
-- **macOS:** Apple Silicon (`arm64`) and Intel (`x86_64`)
-- **Linux:** `x86_64` musl (for Linux `arm64`, install `htmx-analyzer` on your `PATH`)
-- **Windows:** `x86_64`
+The extension registers `htmx-analyzer` across HTML and nine template languages. To use it with template languages, ensure the companion language extension is installed in Zed:
+
+| Language | Zed Language Name | Companion Extension |
+|---|---|---|
+| HTML | `HTML` | Built-in |
+| Jinja2 | `Jinja2` | `ArcherHume/jinja2-support` |
+| Django | `Django` | `joshuadavidthomas/zed-django` |
+| PHP | `PHP` | `zed-extensions/php` |
+| ERB | `HTML+ERB` | `zed-extensions/ruby` |
+| Blade | `Blade` | `bajrangCoder/zed-laravel-blade` |
+| Vue | `Vue.js` | `zed-extensions/vue` |
+| Astro | `Astro` | `zed-extensions/astro` |
+| Svelte | `Svelte` | `zed-extensions/svelte` |
+| Templ | `Templ` | `makifdb/zed-templ` |
 
 ---
 
@@ -35,15 +42,21 @@ Prebuilt binaries are automatically fetched from GitHub releases for:
 
 The extension works out of the box with zero configuration required.
 
-If you want to customize the language server (e.g., provide a custom binary path, custom arguments, or change log levels), you can configure it in your Zed `settings.json`:
+You can customize the binary location or server settings in your Zed `settings.json` under `lsp.htmx-analyzer`:
 
 ```json
 {
   "lsp": {
-    "htmx-lsp": {
+    "htmx-analyzer": {
       "binary": {
-        "path": "/usr/local/bin/htmx-analyzer",
-        "arguments": ["--verbose"]
+        "path": "/usr/local/bin/htmx-analyzer"
+      },
+      "settings": {
+        "diagnostics": {
+          "severity": {
+            "HTMX004": "warning"
+          }
+        }
       }
     }
   }
@@ -52,36 +65,29 @@ If you want to customize the language server (e.g., provide a custom binary path
 
 ---
 
+## Security
+
+- **Pinned Releases and Hashes:** The server release tag and per-platform SHA-256 digests are compiled into `src/pinned.rs`. These hashes are generated only after verifying GitHub build provenance attestations (`gh attestation verify`) signed by the server repository's release workflow.
+- **Download Verification:** Every downloaded binary is verified against its pinned SHA-256 digest before execution or permission changes. If the hash does not match, the downloaded file is deleted immediately and execution aborts with an error.
+- **PATH Precedence:** If you have `htmx-analyzer` installed on your `PATH` (or specified via `lsp.htmx-analyzer.binary.path`), the extension uses it instead of downloading the pinned binary. Note that template language support (Astro, Svelte, Templ) requires `htmx-analyzer` ≥ 0.2.0.
+
+---
+
 ## Development
 
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (edition 2021)
-- `wasm32-wasip1` target:
+- `wasm32-wasip2` target:
   ```bash
-  rustup target add wasm32-wasip1
+  rustup target add wasm32-wasip2
   ```
-
-### Building the Extension
-
-Using `wasm-tools` (Zed 0.130+ component format):
-```bash
-cargo build --target wasm32-wasip1 --release
-wasm-tools component new ./target/wasm32-wasip1/release/zed_htmx.wasm \
-  --adapt wasi_snapshot_preview1=wasi_snapshot_preview1.reactor.wasm \
-  -o extension.wasm
-```
-
-Alternatively, you can load the extension directly into Zed without manual wasm conversion:
-```bash
-zed --install-dev /path/to/zed-htmx
-```
 
 ### Local Dev Installation in Zed
 
 1. Open Zed.
 2. Open the Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Linux/Windows).
-3. Run `zed: install dev extension`.
+3. Run **`zed: install dev extension`**.
 4. Select the `zed-htmx` repository directory.
 
 ---
@@ -89,7 +95,7 @@ zed --install-dev /path/to/zed-htmx
 ## Credits
 
 - Language server implementation: [adrijshikhar/htmx-analyzer](https://github.com/adrijshikhar/htmx-analyzer).
-- Created for the [Zed](https://zed.dev) editor community.
+- Built for the [Zed](https://zed.dev) editor community.
 
 ---
 

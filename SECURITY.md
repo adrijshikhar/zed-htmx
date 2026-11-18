@@ -6,8 +6,16 @@ Security updates are provided for the current active release line:
 
 | Version | Supported |
 | :--- | :--- |
-| `0.1.x` | ✅ Yes |
-| `< 0.1.0` | ❌ No |
+| `0.2.x` | ✅ Yes |
+| `< 0.2.0` | ❌ No |
+
+---
+
+## Security Architecture
+
+- **Attestation & Hash Verification:** Prebuilt binaries for `htmx-analyzer` are verified against SHA-256 hashes compiled into `src/pinned.rs`. Hashes are verified against GitHub build provenance attestations from the upstream release workflow prior to pinning.
+- **Integrity Enforcement:** Downloaded binaries must match their pinned SHA-256 digest before being made executable or launched. Any mismatch causes immediate deletion of the downloaded file.
+- **PATH Security:** User-provided or PATH-installed binaries are executed directly when present, giving the operator full control over the runtime binary.
 
 ---
 
