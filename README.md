@@ -65,6 +65,22 @@ You can customize the binary location or server settings in your Zed `settings.j
 
 ---
 
+## Performance
+
+`htmx-analyzer` is engineered for extreme scale with a zero-allocation linear lexer, incremental rope VFS, and non-blocking JSON-RPC transport:
+
+| Metric | 10,000 Lines (0.61 MB) | 100,000 Lines (4.55 MB) |
+|---|---|---|
+| **Document Open (`didOpen` → Diagnostics)** | **94.7 ms** | **2,192.3 ms** |
+| **Analysis Throughput** | **105,559 lines/sec** | **45,615 lines/sec** |
+| **Diagnostics Emitted** | Full document pass | **49,998 diagnostics** |
+| **Keystroke Edit Latency (p50)** | **178.2 ms** | **626.2 ms** |
+| **Hover Latency (p50)** | **0.2 ms** | **0.5 ms** |
+| **Autocompletion Latency (p50)** | **1.8 ms** | **320.9 ms** (25,000 targets) |
+| **Peak Memory (RSS)** | **27.9 MB** | **362.2 MB** |
+
+---
+
 ## Security
 
 - **Pinned Releases and Hashes:** The server release tag and per-platform SHA-256 digests are compiled into `src/pinned.rs`. These hashes are generated only after verifying GitHub build provenance attestations (`gh attestation verify`) signed by the server repository's release workflow.
