@@ -21,6 +21,7 @@ pub fn pinned_asset(key: &str) -> Option<(&'static str, &'static str)> {
 
 pub fn sha256_file(path: &str) -> Result<String, String> {
     use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
     use std::io::Read;
 
     let mut file = std::fs::File::open(path).map_err(|e| format!("failed to open {path}: {e}"))?;
@@ -35,7 +36,12 @@ pub fn sha256_file(path: &str) -> Result<String, String> {
         }
         hasher.update(&buffer[..count]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    let hash = hasher.finalize();
+    let mut hex = String::with_capacity(hash.len() * 2);
+    for byte in hash {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    Ok(hex)
 }
 
 pub fn verify_download(path: &str, expected_hex: &str) -> Result<(), String> {
