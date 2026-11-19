@@ -68,9 +68,4 @@ jobs:
         if: steps.filter.outputs.pinned == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ -f ./scripts/pin-server.sh ]; then
-            ./scripts/pin-server.sh --check
-          else
-            echo "scripts/pin-server.sh not yet created (pending v0.2.0 release); skipping"
-          fi
+        run: ./scripts/pin-server.sh --check
