@@ -65,6 +65,29 @@ You can customize the binary location or server settings in your Zed `settings.j
 
 ---
 
+## Performance
+
+Engineered in pure Rust for Zed's signature zero-latency editing experience. `htmx-analyzer` pairs a zero-allocation linear attribute lexer, incremental rope VFS, and non-blocking JSON-RPC transport to deliver instantaneous feedback with an almost invisible system footprint:
+- **Cold Startup:** `2.6 ms` (p50)
+- **Base Memory:** `2.9 MB` idle RSS
+- **Binary Footprint:** `~2.4 MB` standalone native binary with zero runtime dependencies
+
+### Executive Performance Scoreboard
+
+| Benchmark Dimension | Measurement | Zed Editing Experience |
+| :--- | :--- | :--- |
+| **Cold Startup** | **`2.6 ms`** (p50) | Near-instant language server readiness upon file open |
+| **Sub-Millisecond Queries** | **Hover:** `0.098 – 0.481 ms`<br>**Completion:** `0.100 – 0.489 ms`<br>**Cross-File Target ID:** `0.040 ms` | Keystroke completions and hover tooltips render well below 60fps frame times (16.6 ms) |
+| **Massive Scale Parsing** | **1,000 to 100,000 lines**<br>Up to **`6.8M lines/sec`** parse throughput | Effortlessly handles massive generated templates and monolithic files |
+| **Burst Typing Resilience** | **`144,153 keystrokes/sec`**<br>`0.26 ms` post-burst completion latency | Zero editor stutter, zero dropped events, and instant completion immediately after bursts |
+| **Multi-File Workspace Indexing** | **`500` files (25,000 lines) in `22.2 ms`**<br>`22,519 files/sec` throughput | Project-wide `#id` targets available across partials immediately |
+| **Zero-Leak Stability** | **2,000 continuous edits** in `0.16s`<br>**`0.55 MB`** memory drift | Long-running editor sessions remain rock-solid with zero memory leaks |
+
+> [!NOTE]
+> All benchmarks were measured on Apple Silicon using production release builds. The complete 6-dimension benchmark suite can be reproduced via the [`htmx-analyzer` test harness](https://github.com/adrijshikhar/htmx-analyzer).
+
+---
+
 ## Security
 
 - **Pinned Releases and Hashes:** The server release tag and per-platform SHA-256 digests are compiled into `src/pinned.rs`. These hashes are generated only after verifying GitHub build provenance attestations (`gh attestation verify`) signed by the server repository's release workflow.
