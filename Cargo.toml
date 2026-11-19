@@ -14,5 +14,5 @@ zed_extension_api = "0.7.0"
 sha2 = "0.10"
 
 [dev-dependencies]
-toml = "0.8"
+toml = "1.2"
 
