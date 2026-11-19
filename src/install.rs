@@ -189,4 +189,24 @@ mod tests {
             "message should tell user to install on PATH: {msg}"
         );
     }
+
+    #[test]
+    fn pinned_assets_cover_all_platforms() {
+        assert_eq!(crate::pinned::SERVER_TAG, "v0.2.0");
+        let supported = [
+            (Os::Mac, Architecture::Aarch64),
+            (Os::Mac, Architecture::X8664),
+            (Os::Linux, Architecture::X8664),
+            (Os::Linux, Architecture::Aarch64),
+            (Os::Windows, Architecture::X8664),
+            (Os::Windows, Architecture::Aarch64),
+        ];
+        for (os, arch) in supported {
+            let key = platform_key(os, arch).expect("supported platform must have key");
+            assert!(
+                pinned_asset(key).is_some(),
+                "missing pinned asset for platform key: {key}"
+            );
+        }
+    }
 }
