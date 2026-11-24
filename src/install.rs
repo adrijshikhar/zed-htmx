@@ -169,18 +169,18 @@ mod tests {
     #[test]
     fn stale_dir_detection() {
         assert!(is_stale_install_dir(
-            "htmx-analyzer-v0.1.0",
-            "htmx-analyzer-v0.2.0"
+            "htmx-analyzer-v0.2.0",
+            "htmx-analyzer-v0.3.0"
         ));
         assert!(!is_stale_install_dir(
-            "htmx-analyzer-v0.2.0",
-            "htmx-analyzer-v0.2.0"
+            "htmx-analyzer-v0.3.0",
+            "htmx-analyzer-v0.3.0"
         ));
         assert!(!is_stale_install_dir(
             concat!("htmx-", "lsp-x"),
-            "htmx-analyzer-v0.2.0"
+            "htmx-analyzer-v0.3.0"
         ));
-        assert!(!is_stale_install_dir("cache", "htmx-analyzer-v0.2.0"));
+        assert!(!is_stale_install_dir("cache", "htmx-analyzer-v0.3.0"));
     }
 
     #[test]
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn pinned_assets_cover_all_platforms() {
-        assert_eq!(crate::pinned::SERVER_TAG, "v0.2.0");
+        assert_eq!(crate::pinned::SERVER_TAG, "v0.3.0");
         let supported = [
             (Os::Mac, Architecture::Aarch64),
             (Os::Mac, Architecture::X8664),
